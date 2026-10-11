@@ -6,12 +6,42 @@ GitHub Actions を使って、Facebook **ページ** に毎日決まった時刻
 
 ## 仕組み
 
-- `posts.json` に投稿内容を書いておく
-- 毎日 `fb_autopost.py` が「今日の投稿」を1件選んで Graph API で投稿
-  - `date` が今日の投稿があればそれを優先（記念日・告知など）
-  - なければ `date` のない投稿を `start_date` から順番にローテーション
+毎日 `fb_autopost.py` が「今日の投稿」を1件決めて Graph API で投稿します。優先順位は次のとおりです。
 
-## posts.json の書き方
+1. `posts.json` に `date` が今日の投稿があればそれ（記念日・告知など）
+2. `blog.json` があれば、**Claude（AI）が毎日新しいブログ記事を書いて投稿**
+   - 投稿した記事は `blog/YYYY-MM-DD.md` に自動でコミットされ、過去記事と内容がかぶらないよう次回の参考にされます
+   - 同じ日に2回動いても、`blog/` に今日の記事があれば二重投稿しません
+3. `blog.json` がなければ、`posts.json` の `date` のない投稿を `start_date` から順番にローテーション
+
+## blog.json の書き方（AI記事）
+
+```json
+{
+  "theme": "暮らしを少し楽しくする、季節の小さな工夫やおすすめ",
+  "audience": "30〜50代の、忙しいけれど日々を丁寧に過ごしたい人",
+  "tone": "やわらかい「です・ます」調",
+  "length": "本文 400〜600 字程度",
+  "topics": ["旬の食材とかんたんな食べ方", "季節の行事や暦にまつわる話"],
+  "hashtags": ["#暮らし", "#毎日ブログ"],
+  "instructions": "宣伝色は出さない。"
+}
+```
+
+| キー | 説明 |
+| --- | --- |
+| `theme` | ブログのテーマ（必須） |
+| `audience` | 想定読者（任意） |
+| `tone` | 文体・口調（任意） |
+| `length` | 本文の長さの目安（任意） |
+| `topics` | 話題の候補リスト（任意。AIはここから選ぶか、テーマに沿って自由に選ぶ） |
+| `hashtags` | 投稿の最後に付けるハッシュタグ（任意） |
+| `instructions` | その他の指示。お店の情報、NGワード、締めの定型文など（任意） |
+| `model` | 使う Claude のモデル（任意。省略時 `claude-opus-5-5`） |
+
+投稿は `【タイトル】` + 本文 + ハッシュタグ の形になります。AI記事をやめて定型文ローテーションに戻すには `blog.json` を削除します。
+
+## posts.json の書き方（定型文・日付指定）
 
 ```json
 {
@@ -46,7 +76,11 @@ GitHub Actions を使って、Facebook **ページ** に毎日決まった時刻
 4. 長期ユーザートークンで `GET /me/accounts` を呼ぶと、各ページの `id` と `access_token` が返ります。
    この `access_token` は **有効期限なし** のページアクセストークンです。
 
-### 2. GitHub に Secrets を登録
+### 2. Claude API キーを用意（AI記事を使う場合）
+
+[Claude Console](https://platform.claude.com/) で API キーを発行します。従量課金で、1記事あたり10円前後、毎日投稿で月300〜500円程度が目安です（記事の長さによります）。
+
+### 3. GitHub に Secrets を登録
 
 リポジトリの **Settings → Secrets and variables → Actions** で追加:
 
@@ -54,13 +88,16 @@ GitHub Actions を使って、Facebook **ページ** に毎日決まった時刻
 | --- | --- |
 | `FB_PAGE_ID` | ページID |
 | `FB_PAGE_ACCESS_TOKEN` | ページアクセストークン |
+| `ANTHROPIC_API_KEY` | Claude API キー（AI記事を使う場合） |
 
 （任意）**Variables** に `FB_GRAPH_VERSION`（例: `v23.0`）を設定すると API バージョンを変更できます。
 
-### 3. 動作確認
+また **Settings → Actions → General → Workflow permissions** を「Read and write permissions」にしてください（投稿した記事を `blog/` にコミットするため）。
+
+### 4. 動作確認
 
 **Actions → Daily Facebook Post → Run workflow** から手動実行できます。
-`dry_run` にチェックを入れたままなら投稿せず内容だけ表示、外すと実際に投稿します。
+`dry_run` にチェックを入れたままなら投稿せず内容だけ表示（AI記事も生成して表示します）、外すと実際に投稿します。
 
 ## 投稿時刻の変更
 
@@ -74,7 +111,8 @@ GitHub Actions を使って、Facebook **ページ** に毎日決まった時刻
 ## ローカルで試す
 
 ```bash
-DRY_RUN=1 python3 fb_autopost.py              # 投稿内容の確認
+pip install -r requirements.txt
+ANTHROPIC_API_KEY=... DRY_RUN=1 python3 fb_autopost.py   # 投稿内容の確認
 python3 -m unittest discover -s tests          # テスト
 FB_PAGE_ID=... FB_PAGE_ACCESS_TOKEN=... python3 fb_autopost.py   # 実際に投稿
 ```
@@ -82,5 +120,6 @@ FB_PAGE_ID=... FB_PAGE_ACCESS_TOKEN=... python3 fb_autopost.py   # 実際に投�
 ## 注意
 
 - GitHub Actions の定期実行は混雑時に数分〜数十分遅れることがあります。
-- リポジトリに 60 日間コミットがないと、定期実行が自動で停止されます（Actions 画面から再有効化できます）。
+- リポジトリに 60 日間コミットがないと、定期実行が自動で停止されます（AI記事モードでは毎日記事がコミットされるので止まりません。ローテーションのみの場合は Actions 画面から再有効化できます）。
+- AI が書いた記事は事実と異なる内容を含むことがあります。お店の営業情報など正確さが必要なことは `instructions` に書くか、`posts.json` の日付指定投稿を使ってください。
 - トークンは絶対にコードや `posts.json` に直接書かず、Secrets に保存してください。

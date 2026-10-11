@@ -1,0 +1,20 @@
+{
+  "start_date": "2026-10-01",
+  "posts": [
+    {
+      "message": "おはようございます！{date}（{weekday}）、今日も一日よろしくお願いします。"
+    },
+    {
+      "message": "今日のおすすめはこちら👇",
+      "link": "https://example.com"
+    },
+    {
+      "message": "{weekday}曜日の一枚📷",
+      "image_url": "https://example.com/sample.jpg"
+    },
+    {
+      "date": "2026-12-25",
+      "message": "メリークリスマス🎄"
+    }
+  ]
+}

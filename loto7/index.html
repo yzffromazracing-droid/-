@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ロト7 予想ノート</title>
+<meta name="description" content="ロト7の過去の当選番号を集計し、傾向から買い目を作ってバックテストで検証するツール">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=IBM+Plex+Mono:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  /* Layout: マークシートを模した1カラム。数字グリッド → 買い目 → 検証 → データ の順 */
+  :root {
+    --paper: #f3f6f5;
+    --sheet: #ffffff;
+    --ink: #1d2a3a;
+    --muted: #5d6b78;
+    --line: #cfd9dc;
+    --mark: #d6336c;
+    --mark-soft: #fbe3ec;
+    --cold: #2f6f9f;
+    --good: #2b8a3e;
+    --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #121a22; --sheet: #1a242e; --ink: #e4ebef; --muted: #96a5b1;
+      --line: #2e3c48; --mark: #f06595; --mark-soft: #3a2230; --cold: #74b4e0; --good: #69c47a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #121a22; --sheet: #1a242e; --ink: #e4ebef; --muted: #96a5b1;
+    --line: #2e3c48; --mark: #f06595; --mark-soft: #3a2230; --cold: #74b4e0; --good: #69c47a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+    padding: 24px 16px 48px;
+  }
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 28px; }
+  h1, h2 { font-family: var(--font-display); font-weight: 400; margin: 0; text-wrap: balance; line-height: 1.3; }
+  h1 { font-size: 1.9rem; letter-spacing: .02em; }
+  h1 span { color: var(--mark); }
+  h2 { font-size: 1.15rem; }
+  p { margin: 0; }
+  .muted { color: var(--muted); font-size: .88rem; }
+  .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+  header { display: grid; gap: 10px; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px;
+    font-size: .82rem; background: var(--sheet);
+  }
+  .chip.sample { border-color: var(--mark); color: var(--mark); }
+  .notice { border-left: 3px solid var(--mark); padding: 6px 12px; font-size: .88rem; color: var(--muted); }
+
+  section { display: grid; gap: 14px; }
+  .sec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .sheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+
+  /* 数字グリッド */
+  .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; max-width: 520px; margin: 0 auto; }
+  .cell {
+    position: relative; border: 1.5px solid var(--mark); border-radius: 40% / 30%;
+    aspect-ratio: 1; max-width: 100%;
+    display: grid; place-items: center; align-content: center; gap: 0;
+    background: color-mix(in srgb, var(--mark) calc(var(--heat, 0) * 85%), var(--sheet));
+    color: var(--ink); font-family: var(--font-num); cursor: default;
+  }
+  .cell b { font-size: 1.05rem; font-weight: 600; }
+  .cell small { font-size: .66rem; color: var(--muted); }
+  .cell.hot b, .cell.hot small { color: #fff; }
+  .cell.coldmode { border-color: var(--cold); background: color-mix(in srgb, var(--cold) calc(var(--heat, 0) * 85%), var(--sheet)); }
+  .legend { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; color: var(--muted); }
+
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--sheet); }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink); font: inherit; font-size: .85rem;
+    padding: 6px 12px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+  /* 操作 */
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; }
+  label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted); }
+  select, input[type="number"] {
+    font: inherit; font-size: .95rem; color: var(--ink); background: var(--sheet);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+  }
+  .check { display: flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--ink); }
+  .btn {
+    font: inherit; font-weight: 700; border-radius: 6px; padding: 9px 18px; cursor: pointer;
+    border: 1.5px solid var(--mark); background: var(--mark); color: #fff;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--cold); outline-offset: 2px;
+  }
+
+  /* 買い目 */
+  .tickets { display: grid; gap: 0; }
+  .ticket {
+    display: grid; grid-template-columns: 2.2rem 1fr auto; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px dashed var(--line);
+  }
+  .ticket:last-child { border-bottom: 0; }
+  .ticket .label { font-family: var(--font-num); color: var(--muted); font-size: .85rem; }
+  .balls { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .ball {
+    width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--font-num); font-weight: 600; font-size: .95rem;
+    border: 1.5px solid var(--mark); background: var(--mark-soft); color: var(--ink);
+  }
+  .ball.small { width: 1.8rem; height: 1.8rem; font-size: .8rem; }
+  .ball.bonus { border-style: dashed; background: transparent; }
+  .meta { font-size: .78rem; color: var(--muted); text-align: right; white-space: nowrap; }
+
+  /* 検証表 */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 500; color: var(--muted); font-size: .8rem; letter-spacing: .04em; }
+  td.diff.up { color: var(--good); }
+  td.diff.down { color: var(--mark); }
+
+  /* データ */
+  details summary { cursor: pointer; font-weight: 700; }
+  textarea {
+    width: 100%; min-height: 160px; font-family: var(--font-num); font-size: .82rem;
+    color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .history { display: grid; gap: 6px; }
+  .history .item { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .history .no { font-family: var(--font-num); font-size: .82rem; color: var(--muted); min-width: 4.5rem; }
+  .msg { font-size: .85rem; }
+  .msg.err { color: var(--mark); }
+  .msg.ok { color: var(--good); }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 1.55rem; }
+    .ticket { grid-template-columns: 1fr; gap: 6px; }
+    .meta { text-align: left; }
+    .grid { gap: 4px; }
+    .cell small { font-size: .58rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ticket { animation: rise .25s ease both; }
+    @keyframes rise { from { transform: translateY(4px); opacity: .4; } to { transform: none; opacity: 1; } }
+  }
+</style>
+
+</head>
+<body>
+<main>
+  <header>
+    <h1>ロト<span>7</span> 予想ノート</h1>
+    <div class="status">
+      <span class="chip" id="data-chip">読み込み中…</span>
+      <span class="chip num" id="range-chip" hidden></span>
+    </div>
+    <p class="notice">
+      抽選は毎回独立した無作為抽出です。過去の出方で次の当選確率は変わりません（1等の確率は 1/10,295,472）。
+      このツールは傾向を見ながら買い目を選ぶための道具で、下の「バックテスト」で効果がないことも確かめられます。
+    </p>
+  </header>
+
+  <section aria-labelledby="h-grid">
+    <div class="sec-head">
+      <h2 id="h-grid">数字ごとの出方</h2>
+      <div class="seg" role="group" aria-label="表示する指標">
+        <button type="button" data-metric="recent" aria-pressed="true">直近の出現</button>
+        <button type="button" data-metric="total" aria-pressed="false">全期間</button>
+        <button type="button" data-metric="gap" aria-pressed="false">ご無沙汰</button>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="grid" id="grid"></div>
+    </div>
+    <div class="legend"><span id="legend-left"></span><span id="legend-right"></span></div>
+  </section>
+
+  <section aria-labelledby="h-pred">
+    <div class="sec-head"><h2 id="h-pred">次回の買い目をつくる</h2></div>
+    <div class="controls">
+      <label for="strategy">考え方
+        <select id="strategy">
+          <option value="mixed">ミックス（よく出る＋ご無沙汰）</option>
+          <option value="hot">よく出ている数字を重視</option>
+          <option value="cold">しばらく出ていない数字を重視</option>
+          <option value="random">完全ランダム</option>
+        </select>
+      </label>
+      <label for="window">直近の範囲（回）
+        <input id="window" type="number" min="5" max="500" value="50" style="width:6rem">
+      </label>
+      <label for="count">口数
+        <select id="count">
+          <option>1</option><option>3</option><option selected>5</option><option>10</option>
+        </select>
+      </label>
+      <label class="check" for="balance"><input id="balance" type="checkbox" checked>合計・奇偶のバランスを整える</label>
+      <button class="btn" id="generate" type="button">買い目をつくる</button>
+    </div>
+    <div class="sheet">
+      <div class="tickets" id="tickets"></div>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="copy" type="button">買い目をコピー</button>
+      <span class="msg" id="copy-msg" role="status"></span>
+    </div>
+    <textarea id="copy-fallback" hidden readonly aria-label="コピー用テキスト"></textarea>
+  </section>
+
+  <section aria-labelledby="h-bt">
+    <div class="sec-head">
+      <h2 id="h-bt">バックテスト</h2>
+      <button class="btn ghost" id="run-bt" type="button">検証する</button>
+    </div>
+    <p class="muted">
+      各回について「その回より前のデータだけ」で5口つくり、実際の本数字と何個一致したかを平均します。
+      でたらめに選んだ場合の理論値は 7×7÷37 ≒ <span class="num">1.324</span> 個です。
+    </p>
+    <div class="sheet table-wrap">
+      <table>
+        <thead><tr><th>考え方</th><th>口数</th><th>平均一致</th><th>理論値との差</th><th>4個以上</th></tr></thead>
+        <tbody id="bt-body"><tr><td colspan="5" class="muted">「検証する」を押すと計算します。</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-data">
+    <h2 id="h-data">過去の当選番号</h2>
+    <div class="sheet history" id="history"></div>
+    <details class="sheet" id="data-details">
+      <summary>データを入れ替える</summary>
+      <div style="display:grid; gap:12px; margin-top:12px">
+        <p class="muted">
+          みずほ銀行の宝くじサイトなどの当選番号一覧を、表ごとコピーして貼り付けるか、CSV ファイルを選んでください。
+          1行に「回号・本数字7個・ボーナス数字2個」が含まれていれば読み取れます（日付・金額・見出しは無視します）。
+          例: <span class="num">第600回,2024/10/11,2,7,11,18,25,31,35,4,22</span>
+        </p>
+        <textarea id="data-input" placeholder="ここに当選番号を貼り付け"></textarea>
+        <div class="row">
+          <button class="btn" id="load" type="button">読み込む</button>
+          <label class="btn ghost" for="file" style="display:inline-block; color:var(--ink)">CSVファイルを選ぶ</label>
+          <input id="file" type="file" accept=".csv,.txt,.tsv,text/plain,text/csv" hidden>
+          <button class="btn ghost" id="reset" type="button">サンプルに戻す</button>
+        </div>
+        <p class="msg" id="load-msg" role="status"></p>
+      </div>
+    </details>
+  </section>
+</main>
+
+<script src="predictor.js"></script>
+<script>
+(function () {
+  "use strict";
+  const STORE_KEY = "loto7-data";
+  const $ = (id) => document.getElementById(id);
+  let draws = [];
+  let isSample = true;
+  let metric = "recent";
+  let lastSets = [];
+
+  /** 動作確認用のデモデータ（無作為に生成。実際の当選番号ではない） */
+  function sampleDraws() {
+    const rng = Loto7.seededRandom(20130405);
+    const out = [];
+    for (let i = 1; i <= 300; i++) {
+      const pool = Array.from({ length: 37 }, (_, k) => k + 1);
+      const nums = [];
+      while (nums.length < 9) nums.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+      out.push({ no: i, main: nums.slice(0, 7).sort((a, b) => a - b), bonus: nums.slice(7) });
+    }
+    return out;
+  }
+
+  function storeGet() { try { return localStorage.getItem(STORE_KEY); } catch (e) { return null; } }
+  function storeSet(v) { try { v == null ? localStorage.removeItem(STORE_KEY) : localStorage.setItem(STORE_KEY, v); } catch (e) {} }
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function ballsHtml(nums, cls) { return nums.map((n) => `<span class="ball ${cls || ""}">${pad(n)}</span>`).join(""); }
+
+  function settings() {
+    const w = Math.max(5, Math.min(500, Number($("window").value) || 50));
+    return { strategy: $("strategy").value, count: Number($("count").value), balance: $("balance").checked, window: w };
+  }
+
+  function renderStatus() {
+    const chip = $("data-chip");
+    chip.textContent = isSample ? `サンプルデータ ${draws.length}回分（実際の当選番号ではありません）` : `あなたのデータ ${draws.length}回分`;
+    chip.classList.toggle("sample", isSample);
+    const range = $("range-chip");
+    const first = draws[0], last = draws[draws.length - 1];
+    range.hidden = !(first && first.no != null && !isSample);
+    if (!range.hidden) range.textContent = `第${first.no}回〜第${last.no}回`;
+  }
+
+  function renderGrid() {
+    const stats = Loto7.computeStats(draws, settings().window);
+    const vals = stats.numbers.map((x) => x[metric]);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    $("grid").innerHTML = stats.numbers.map((x) => {
+      const v = x[metric];
+      const heat = max === min ? 0 : (v - min) / (max - min);
+      const unit = metric === "gap" ? "回前" : "回";
+      const cls = ["cell", metric === "gap" ? "coldmode" : "", heat > 0.6 ? "hot" : ""].join(" ");
+      const title = `${x.n}: 全期間${x.total}回 / 直近${stats.window}回中${x.recent}回 / 最後に出たのは${x.gap}回前`;
+      return `<div class="${cls}" style="--heat:${heat.toFixed(3)}" title="${title}"><b>${pad(x.n)}</b><small>${v}${unit}</small></div>`;
+    }).join("");
+    const labels = {
+      recent: [`直近${stats.window}回での出現回数`, `平均 ${(stats.window * 7 / 37).toFixed(1)}回`],
+      total: [`全${stats.draws}回での出現回数`, `平均 ${(stats.draws * 7 / 37).toFixed(1)}回`],
+      gap: ["最後に出てから何回たったか", "色が濃いほどご無沙汰"],
+    };
+    $("legend-left").textContent = labels[metric][0];
+    $("legend-right").textContent = labels[metric][1];
+  }
+
+  function renderTickets() {
+    const s = settings();
+    lastSets = Loto7.predict(draws, s);
+    const letters = "ABCDEFGHIJ";
+    $("tickets").innerHTML = lastSets.map((set, i) => {
+      const sum = set.reduce((a, b) => a + b, 0);
+      const odd = set.filter((n) => n % 2).length;
+      return `<div class="ticket"><span class="label">${letters[i]}</span><div class="balls">${ballsHtml(set)}</div>` +
+        `<span class="meta num">合計 ${sum} ／ 奇${odd}・偶${7 - odd}</span></div>`;
+    }).join("");
+    $("copy-msg").textContent = "";
+    $("copy-fallback").hidden = true;
+  }
+
+  function renderHistory() {
+    const recent = draws.slice(-8).reverse();
+    $("history").innerHTML = recent.length ? recent.map((d) =>
+      `<div class="item"><span class="no">${d.no != null ? "第" + d.no + "回" : ""}</span>` +
+      `<div class="balls">${ballsHtml(d.main, "small")}${ballsHtml(d.bonus, "small bonus")}</div></div>`
+    ).join("") + `<p class="muted">新しい順に最大8回分。点線はボーナス数字。</p>` : `<p class="muted">データがありません。</p>`;
+  }
+
+  function renderAll() {
+    renderStatus();
+    renderGrid();
+    renderTickets();
+    renderHistory();
+    $("bt-body").innerHTML = `<tr><td colspan="5" class="muted">「検証する」を押すと計算します。</td></tr>`;
+  }
+
+  function runBacktest() {
+    const s = settings();
+    const names = { mixed: "ミックス", hot: "よく出る数字", cold: "ご無沙汰の数字", random: "完全ランダム" };
+    const minHistory = Math.min(50, Math.max(10, Math.floor(draws.length / 3)));
+    if (draws.length < minHistory + 10) {
+      $("bt-body").innerHTML = `<tr><td colspan="5" class="muted">検証には30回分以上のデータが必要です。</td></tr>`;
+      return;
+    }
+    $("bt-body").innerHTML = `<tr><td colspan="5" class="muted">計算中…</td></tr>`;
+    setTimeout(() => {
+      const rows = Object.keys(names).map((strategy) => {
+        const r = Loto7.backtest(draws, { strategy, tickets: 5, minHistory, balance: s.balance, window: s.window, seed: 7 });
+        const diff = r.averageHits - r.expectedRandom;
+        const four = r.hitCounts.slice(4).reduce((a, b) => a + b, 0);
+        const cls = Math.abs(diff) < 0.05 ? "" : diff > 0 ? "up" : "down";
+        return `<tr><td>${names[strategy]}</td><td class="num">${r.tickets}</td>` +
+          `<td class="num">${r.averageHits.toFixed(3)}</td>` +
+          `<td class="num diff ${cls}">${diff >= 0 ? "+" : ""}${diff.toFixed(3)}</td>` +
+          `<td class="num">${four}口</td></tr>`;
+      });
+      $("bt-body").innerHTML = rows.join("") +
+        `<tr><td colspan="5" class="muted" style="white-space:normal">第${draws[minHistory].no ?? minHistory + 1}回以降の${draws.length - minHistory}回で検証。差が ±0.05 程度なら偶然の範囲です。</td></tr>`;
+    }, 30);
+  }
+
+  function loadText(text, persist) {
+    const parsed = Loto7.parseResults(text);
+    const msg = $("load-msg");
+    if (parsed.length < 1) {
+      msg.className = "msg err";
+      msg.textContent = "当選番号を読み取れませんでした。1行に本数字7個（1〜37、重複なし）が並んでいるか確認してください。";
+      return false;
+    }
+    draws = parsed;
+    isSample = false;
+    if (persist) storeSet(text);
+    msg.className = "msg ok";
+    msg.textContent = `${parsed.length}回分を読み込みました。`;
+    renderAll();
+    return true;
+  }
+
+  document.querySelectorAll("[data-metric]").forEach((b) => b.addEventListener("click", () => {
+    metric = b.dataset.metric;
+    document.querySelectorAll("[data-metric]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderGrid();
+  }));
+  $("generate").addEventListener("click", renderTickets);
+  $("window").addEventListener("change", () => { renderGrid(); renderTickets(); });
+  $("run-bt").addEventListener("click", runBacktest);
+  $("load").addEventListener("click", () => loadText($("data-input").value, true));
+  $("file").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    // UTF-8 で読めなければ Shift_JIS（公式サイトや Excel の CSV に多い）として読み直す
+    f.arrayBuffer().then((buf) => {
+      let text = new TextDecoder("utf-8").decode(buf);
+      if (text.includes("\uFFFD")) {
+        try { text = new TextDecoder("shift_jis").decode(buf); } catch (err) {}
+      }
+      $("data-input").value = text;
+      loadText(text, true);
+    });
+    e.target.value = "";
+  });
+  $("reset").addEventListener("click", () => {
+    storeSet(null);
+    draws = sampleDraws();
+    isSample = true;
+    $("data-input").value = "";
+    $("load-msg").className = "msg";
+    $("load-msg").textContent = "サンプルデータに戻しました。";
+    renderAll();
+  });
+  $("copy").addEventListener("click", () => {
+    const text = lastSets.map((s, i) => "ABCDEFGHIJ"[i] + ": " + s.map(pad).join(" ")).join("\n");
+    const done = () => { $("copy-msg").className = "msg ok"; $("copy-msg").textContent = "コピーしました。"; };
+    const fallback = () => {
+      const ta = $("copy-fallback");
+      ta.hidden = false; ta.value = text; ta.focus(); ta.select();
+      $("copy-msg").className = "msg"; $("copy-msg").textContent = "下の欄を選択してコピーしてください。";
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  const saved = storeGet();
+  if (saved) {
+    $("data-input").value = saved;
+    if (!loadText(saved, false)) { draws = sampleDraws(); renderAll(); }
+    $("load-msg").textContent = "";
+  } else {
+    draws = sampleDraws();
+    renderAll();
+  }
+})();
+</script>
+</body>
+</html>

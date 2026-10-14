@@ -1,9 +1,10 @@
 name: Daily Facebook Post
 
 on:
-  schedule:
-    # 毎日 09:00 JST (= 00:00 UTC)。GitHub側の混雑で数分〜数十分遅れることがあります
-    - cron: "0 0 * * *"
+  # 毎日の定期実行は停止中（消費税区分辞書リポジトリの自動投稿を使っているため）。
+  # 再開するときは次の2行を戻す（毎日 09:00 JST = 00:00 UTC）
+  # schedule:
+  #   - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
